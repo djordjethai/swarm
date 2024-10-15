@@ -1,4 +1,5 @@
 from openai import OpenAI
+from Agent_functions import run_full_turn
 
 client = OpenAI()
 
@@ -15,33 +16,6 @@ system_message = (
     "4. If accepted, search for the ID and then execute refund."
     ""
 )
-
-def look_up_item(search_query):
-    """Use to find item ID.
-    Search query can be a description or keywords."""
-
-    # return hard-coded item ID - in reality would be a lookup
-    return "item_132612938"
-
-
-def execute_refund(item_id, reason="not provided"):
-
-    print("Summary:", item_id, reason) # lazy summary
-    return "success"
-
-
-def run_full_turn(system_message, messages):
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[{"role": "system", "content": system_message}] + messages,
-    )
-    message = response.choices[0].message
-    messages.append(message)
-
-    if message.content: print("Assistant:", message.content)
-
-    return message
-
 
 messages = []
 while True:

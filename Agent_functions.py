@@ -1,9 +1,18 @@
 import inspect
 import json
 from openai import OpenAI
-from OpenAI_agents import execute_refund, look_up_item, system_message
+from Agent_handoffs import execute_refund, look_up_item
 
 client = OpenAI()
+
+# This function, function_to_schema, generates a schema (in the form of a dictionary) for a given Python function. 
+# The schema describes the function's name, parameters, and their types, based on Python's type annotations, along with other metadata. 
+# Key Features:
+# JSON Schema Format: The schema is modeled after JSON Schema standards for defining object structures.
+# Dynamic Function Descriptions: It extracts the function's name and description (docstring), 
+#                                allowing for dynamic schema generation based on any function passed in.
+# Error Handling: It raises meaningful errors when it encounters unrecognized types or problems accessing the function signature.
+# This function is useful for automatic documentation or validation of function parameters in a structured format.
 
 def function_to_schema(func) -> dict:
     type_map = {
@@ -99,7 +108,6 @@ for tool_call in message.tool_calls:
 
 tools = [execute_refund, look_up_item]
 
-
 def run_full_turn(system_message, tools, messages):
 
     num_init_messages = len(messages)
@@ -127,7 +135,6 @@ def run_full_turn(system_message, tools, messages):
             break
 
         # === 2. handle tool calls ===
-
         for tool_call in message.tool_calls:
             result = execute_tool_call(tool_call, tools_map)
 
@@ -140,23 +147,3 @@ def run_full_turn(system_message, tools, messages):
 
     # ==== 3. return new messages =====
     return messages[num_init_messages:]
-
-
-def execute_tool_call(tool_call, tools_map):
-    name = tool_call.function.name
-    args = json.loads(tool_call.function.arguments)
-
-    print(f"Assistant: {name}({args})")
-
-    # call corresponding function with provided arguments
-    return tools_map[name](**args)
-
-
-messages = []
-while True:
-    user = input("User: ")
-    messages.append({"role": "user", "content": user})
-
-    new_messages = run_full_turn(system_message, tools, messages)
-    messages.extend(new_messages)
-

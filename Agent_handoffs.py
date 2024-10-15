@@ -1,69 +1,24 @@
 from pydantic import BaseModel
 from openai import OpenAI
-import json
 from typing import Optional
-from Agent_functions import function_to_schema
+from Agent_functions import run_full_turn
 
 client = OpenAI()
-
 class Agent(BaseModel):
     name: str = "Agent"
     model: str = "gpt-4o-mini"
     instructions: str = "You are a helpful Agent"
     tools: list = []
+class Response(BaseModel):
+    agent: Optional[Agent]
+    messages: list
 
-def run_full_turn(agent, messages):
-
-    num_init_messages = len(messages)
-    messages = messages.copy()
-
-    while True:
-
-        # turn python functions into tools and save a reverse map
-        tool_schemas = [function_to_schema(tool) for tool in agent.tools]
-        tools_map = {tool.__name__: tool for tool in agent.tools}
-
-        # === 1. get openai completion ===
-        response = client.chat.completions.create(
-            model=agent.model,
-            messages=[{"role": "system", "content": agent.instructions}] + messages,
-            tools=tool_schemas or None,
-        )
-        message = response.choices[0].message
-        messages.append(message)
-
-        if message.content:  # print assistant response
-            print("Assistant:", message.content)
-
-        if not message.tool_calls:  # if finished handling tool calls, break
-            break
-
-        # === 2. handle tool calls ===
-
-        for tool_call in message.tool_calls:
-            result = execute_tool_call(tool_call, tools_map)
-
-            result_message = {
-                "role": "tool",
-                "tool_call_id": tool_call.id,
-                "content": result,
-            }
-            messages.append(result_message)
-
-    # ==== 3. return new messages =====
-    return messages[num_init_messages:]
-
-
-def execute_tool_call(tool_call, tools_map):
-    name = tool_call.function.name
-    args = json.loads(tool_call.function.arguments)
-
-    print(f"Assistant: {name}({args})")
-
-    # call corresponding function with provided arguments
-    return tools_map[name](**args)
-
-def execute_refund(item_name):
+def execute_refund(item_id, reason="not provided"):
+    print("\n\n=== Refund Summary ===")
+    print(f"Item ID: {item_id}")
+    print(f"Reason: {reason}")
+    print("=================\n")
+    print("Refund execution successful!")
     return "success"
 
 refund_agent = Agent(
@@ -81,7 +36,6 @@ sales_assistant = Agent(
     tools=[place_order],
 )
 
-
 messages = []
 user_query = "Place an order for a black boot."
 print("User:", user_query)
@@ -89,7 +43,6 @@ messages.append({"role": "user", "content": user_query})
 
 response = run_full_turn(sales_assistant, messages) # sales assistant
 messages.extend(response)
-
 
 user_query = "Actually, I want a refund." # implitly refers to the last item
 print("User:", user_query)
@@ -111,68 +64,6 @@ sales_assistant = Agent(
     tools=[place_order],
 )
 
-class Response(BaseModel):
-    agent: Optional[Agent]
-    messages: list
-
-def run_full_turn(agent, messages):
-
-    current_agent = agent
-    num_init_messages = len(messages)
-    messages = messages.copy()
-
-    while True:
-
-        # turn python functions into tools and save a reverse map
-        tool_schemas = [function_to_schema(tool) for tool in current_agent.tools]
-        tools = {tool.__name__: tool for tool in current_agent.tools}
-
-        # === 1. get openai completion ===
-        response = client.chat.completions.create(
-            model=agent.model,
-            messages=[{"role": "system", "content": current_agent.instructions}]
-            + messages,
-            tools=tool_schemas or None,
-        )
-        message = response.choices[0].message
-        messages.append(message)
-
-        if message.content:  # print agent response
-            print(f"{current_agent.name}:", message.content)
-
-        if not message.tool_calls:  # if finished handling tool calls, break
-            break
-
-        # === 2. handle tool calls ===
-
-        for tool_call in message.tool_calls:
-            result = execute_tool_call(tool_call, tools, current_agent.name)
-
-            if type(result) is Agent:  # if agent transfer, update current agent
-                current_agent = result
-                result = (
-                    f"Transfered to {current_agent.name}. Adopt persona immediately."
-                )
-
-            result_message = {
-                "role": "tool",
-                "tool_call_id": tool_call.id,
-                "content": result,
-            }
-            messages.append(result_message)
-
-    # ==== 3. return last agent used and new messages =====
-    return Response(agent=current_agent, messages=messages[num_init_messages:])
-
-
-def execute_tool_call(tool_call, tools, agent_name):
-    name = tool_call.function.name
-    args = json.loads(tool_call.function.arguments)
-
-    print(f"{agent_name}:", f"{name}({args})")
-
-    return tools[name](**args)  # call corresponding function with provided arguments
-
 def escalate_to_human(summary):
     """Only call this if explicitly asked to."""
     print("Escalating to human agent...")
@@ -181,22 +72,18 @@ def escalate_to_human(summary):
     print("=========================\n")
     exit()
 
-
 def transfer_to_sales_agent():
     """User for anything sales or buying related."""
     return sales_agent
-
 
 def transfer_to_issues_and_repairs():
     """User for issues, repairs, or refunds."""
     return issues_and_repairs_agent
 
-
 def transfer_back_to_triage():
     """Call this if the user brings up a topic outside of your purview,
     including escalating to human."""
     return triage_agent
-
 
 triage_agent = Agent(
     name="Triage Agent",
@@ -208,7 +95,6 @@ triage_agent = Agent(
     ),
     tools=[transfer_to_sales_agent, transfer_to_issues_and_repairs, escalate_to_human],
 )
-
 
 def execute_order(product, price: int):
     """Price should be in USD."""
@@ -223,7 +109,6 @@ def execute_order(product, price: int):
     else:
         print("Order cancelled!")
         return "User cancelled order."
-
 
 sales_agent = Agent(
     name="Sales Agent",
@@ -242,23 +127,12 @@ sales_agent = Agent(
     tools=[execute_order, transfer_back_to_triage],
 )
 
-
 def look_up_item(search_query):
     """Use to find item ID.
     Search query can be a description or keywords."""
     item_id = "item_132612938"
     print("Found item:", item_id)
     return item_id
-
-
-def execute_refund(item_id, reason="not provided"):
-    print("\n\n=== Refund Summary ===")
-    print(f"Item ID: {item_id}")
-    print(f"Reason: {reason}")
-    print("=================\n")
-    print("Refund execution successful!")
-    return "success"
-
 
 issues_and_repairs_agent = Agent(
     name="Issues and Repairs Agent",
